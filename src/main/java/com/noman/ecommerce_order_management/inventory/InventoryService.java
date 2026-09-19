@@ -104,17 +104,6 @@ public class InventoryService {
         return toResponse(inventory);
     }
 
-    /*
-     * Concurrency-safe reservation.
-     *
-     * CheckoutService already has an outer transaction.
-     * Because Spring transactions use REQUIRED propagation
-     * by default, this method participates in that transaction.
-     *
-     * Therefore the PESSIMISTIC_WRITE lock acquired below
-     * remains held until the complete checkout transaction
-     * commits or rolls back.
-     */
     @Transactional
     public Inventory reserveInventory(
             Long skuId,
@@ -141,25 +130,6 @@ public class InventoryService {
             );
         }
 
-        /*
-         * CRITICAL:
-         *
-         * These inventory rows are loaded with
-         * PESSIMISTIC_WRITE.
-         *
-         * Transaction A:
-         * available = 1
-         * locks row
-         * reserves 1
-         * available = 0
-         *
-         * Transaction B waits.
-         *
-         * After A commits, B reads the latest value:
-         * available = 0
-         *
-         * Therefore B cannot oversell.
-         */
         List<Inventory> inventories =
                 inventoryRepository
                         .findAllBySkuIdOrderByWarehouseIdAsc(
@@ -198,12 +168,50 @@ public class InventoryService {
                         + quantity
         );
 
-        /*
-         * No explicit save is necessary.
-         * Entity is managed by JPA and dirty checking
-         * writes the changed quantities at commit.
-         */
         return inventory;
+    }
+
+    @Transactional
+    public void consumeReservedInventory(
+            Long skuId,
+            Long warehouseId,
+            int quantity
+    ) {
+
+        if (quantity <= 0) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Fulfillment quantity must be greater than zero"
+            );
+        }
+
+        Inventory inventory =
+                inventoryRepository
+                        .findBySkuAndWarehouseForUpdate(
+                                skuId,
+                                warehouseId
+                        )
+                        .orElseThrow(() ->
+                                new ResponseStatusException(
+                                        HttpStatus.NOT_FOUND,
+                                        "Inventory not found for order item"
+                                )
+                        );
+
+        if (inventory.getReservedQuantity()
+                < quantity) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Reserved inventory is insufficient for fulfillment"
+            );
+        }
+
+        inventory.setReservedQuantity(
+                inventory.getReservedQuantity()
+                        - quantity
+        );
     }
 
     @Transactional(readOnly = true)
