@@ -37,6 +37,7 @@ public class InventoryService {
         );
 
         if (!sku.isActive()) {
+
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Cannot add inventory for inactive SKU"
@@ -49,6 +50,7 @@ public class InventoryService {
                 );
 
         if (!warehouse.isActive()) {
+
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Cannot add inventory to inactive warehouse"
@@ -102,6 +104,85 @@ public class InventoryService {
         return toResponse(inventory);
     }
 
+    /*
+     * Checkout reservation.
+     *
+     * Commit 7 performs the correct functional movement:
+     *
+     * availableQuantity -= quantity
+     * reservedQuantity += quantity
+     *
+     * Commit 8 will add PESSIMISTIC_WRITE row locking
+     * around this lookup so two concurrent checkouts
+     * cannot reserve the same final stock.
+     */
+    @Transactional
+    public Inventory reserveInventory(
+            Long skuId,
+            int quantity
+    ) {
+
+        if (quantity <= 0) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Reservation quantity must be greater than zero"
+            );
+        }
+
+        Sku sku =
+                getSku(skuId);
+
+        if (!sku.isActive()
+                || !sku.getProduct().isActive()) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "SKU is not available for purchase"
+            );
+        }
+
+        List<Inventory> inventories =
+                inventoryRepository
+                        .findBySkuIdOrderByWarehouseIdAsc(
+                                skuId
+                        );
+
+        Inventory inventory =
+                inventories
+                        .stream()
+                        .filter(candidate ->
+                                candidate
+                                        .getWarehouse()
+                                        .isActive()
+                        )
+                        .filter(candidate ->
+                                candidate
+                                        .getAvailableQuantity()
+                                        >= quantity
+                        )
+                        .findFirst()
+                        .orElseThrow(() ->
+                                new ResponseStatusException(
+                                        HttpStatus.CONFLICT,
+                                        "Insufficient inventory for SKU "
+                                                + sku.getSkuCode()
+                                )
+                        );
+
+        inventory.setAvailableQuantity(
+                inventory.getAvailableQuantity()
+                        - quantity
+        );
+
+        inventory.setReservedQuantity(
+                inventory.getReservedQuantity()
+                        + quantity
+        );
+
+        return inventory;
+    }
+
     @Transactional(readOnly = true)
     public List<InventoryResponse> getInventories(
             Long skuId,
@@ -118,7 +199,8 @@ public class InventoryService {
 
         List<Inventory> inventories;
 
-        if (skuId != null && warehouseId != null) {
+        if (skuId != null
+                && warehouseId != null) {
 
             inventories =
                     inventoryRepository
@@ -204,7 +286,8 @@ public class InventoryService {
             Integer quantity
     ) {
 
-        if (quantity == null || quantity < 0) {
+        if (quantity == null
+                || quantity < 0) {
 
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -227,13 +310,16 @@ public class InventoryService {
                         inventory.getSku().getId()
                 )
                 .skuCode(
-                        inventory.getSku().getSkuCode()
+                        inventory.getSku()
+                                .getSkuCode()
                 )
                 .warehouseId(
-                        inventory.getWarehouse().getId()
+                        inventory.getWarehouse()
+                                .getId()
                 )
                 .warehouseCode(
-                        inventory.getWarehouse().getCode()
+                        inventory.getWarehouse()
+                                .getCode()
                 )
                 .availableQuantity(
                         inventory.getAvailableQuantity()
@@ -241,7 +327,9 @@ public class InventoryService {
                 .reservedQuantity(
                         inventory.getReservedQuantity()
                 )
-                .totalQuantity(totalQuantity)
+                .totalQuantity(
+                        totalQuantity
+                )
                 .build();
     }
 }
