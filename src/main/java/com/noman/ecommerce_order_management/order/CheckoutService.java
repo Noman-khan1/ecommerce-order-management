@@ -26,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -56,11 +57,19 @@ public class CheckoutService {
         User customer =
                 getCustomer(customerEmail);
 
+        /*
+         * Lock the customer's cart.
+         *
+         * This protects against two simultaneous
+         * checkout requests for the same customer.
+         */
         Cart cart =
                 cartRepository
-                        .findByCustomerId(
+                        .findAllByCustomerId(
                                 customer.getId()
                         )
+                        .stream()
+                        .findFirst()
                         .orElseThrow(() ->
                                 new ResponseStatusException(
                                         HttpStatus.BAD_REQUEST,
@@ -132,11 +141,40 @@ public class CheckoutService {
                 customerOrderRepository
                         .saveAndFlush(order);
 
+        /*
+         * CRITICAL DEADLOCK REDUCTION:
+         *
+         * Every checkout acquires inventory locks
+         * in the same SKU-ID order.
+         *
+         * Without deterministic ordering:
+         *
+         * Transaction A: locks SKU 1 → waits SKU 2
+         * Transaction B: locks SKU 2 → waits SKU 1
+         *
+         * That can deadlock.
+         *
+         * With sorting:
+         *
+         * both acquire SKU 1 → SKU 2
+         */
+        List<CartItem> reservationItems =
+                cartItems
+                        .stream()
+                        .sorted(
+                                Comparator.comparing(
+                                        item ->
+                                                item.getSku()
+                                                        .getId()
+                                )
+                        )
+                        .toList();
+
         List<OrderItem> orderItems =
                 new ArrayList<>();
 
         for (CartItem cartItem
-                : cartItems) {
+                : reservationItems) {
 
             Sku sku =
                     cartItem.getSku();
@@ -221,9 +259,14 @@ public class CheckoutService {
                 .saveAndFlush(order);
 
         /*
-         * Clear cart only after order,
-         * inventory reservation and
-         * payment all succeed.
+         * Clear the cart only after:
+         *
+         * order creation
+         * inventory reservation
+         * order item creation
+         * payment success
+         *
+         * have all completed.
          */
         cartItemRepository
                 .deleteByCartId(

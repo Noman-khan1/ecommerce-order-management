@@ -105,16 +105,15 @@ public class InventoryService {
     }
 
     /*
-     * Checkout reservation.
+     * Concurrency-safe reservation.
      *
-     * Commit 7 performs the correct functional movement:
+     * CheckoutService already has an outer transaction.
+     * Because Spring transactions use REQUIRED propagation
+     * by default, this method participates in that transaction.
      *
-     * availableQuantity -= quantity
-     * reservedQuantity += quantity
-     *
-     * Commit 8 will add PESSIMISTIC_WRITE row locking
-     * around this lookup so two concurrent checkouts
-     * cannot reserve the same final stock.
+     * Therefore the PESSIMISTIC_WRITE lock acquired below
+     * remains held until the complete checkout transaction
+     * commits or rolls back.
      */
     @Transactional
     public Inventory reserveInventory(
@@ -142,9 +141,28 @@ public class InventoryService {
             );
         }
 
+        /*
+         * CRITICAL:
+         *
+         * These inventory rows are loaded with
+         * PESSIMISTIC_WRITE.
+         *
+         * Transaction A:
+         * available = 1
+         * locks row
+         * reserves 1
+         * available = 0
+         *
+         * Transaction B waits.
+         *
+         * After A commits, B reads the latest value:
+         * available = 0
+         *
+         * Therefore B cannot oversell.
+         */
         List<Inventory> inventories =
                 inventoryRepository
-                        .findBySkuIdOrderByWarehouseIdAsc(
+                        .findAllBySkuIdOrderByWarehouseIdAsc(
                                 skuId
                         );
 
@@ -180,6 +198,11 @@ public class InventoryService {
                         + quantity
         );
 
+        /*
+         * No explicit save is necessary.
+         * Entity is managed by JPA and dirty checking
+         * writes the changed quantities at commit.
+         */
         return inventory;
     }
 
