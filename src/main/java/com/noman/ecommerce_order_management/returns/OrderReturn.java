@@ -1,4 +1,4 @@
-package com.noman.ecommerce_order_management.payment;
+package com.noman.ecommerce_order_management.returns;
 
 import com.noman.ecommerce_order_management.order.CustomerOrder;
 import jakarta.persistence.*;
@@ -9,15 +9,17 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(
-        name = "payments",
+        name = "order_returns",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "uk_payments_order",
+                        name = "uk_order_returns_order",
                         columnNames = "order_id"
-                ),
-                @UniqueConstraint(
-                        name = "uk_payments_reference",
-                        columnNames = "payment_reference"
+                )
+        },
+        indexes = {
+                @Index(
+                        name = "idx_order_returns_order",
+                        columnList = "order_id"
                 )
         }
 )
@@ -26,7 +28,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Payment {
+public class OrderReturn {
 
     @Id
     @GeneratedValue(
@@ -43,46 +45,33 @@ public class Payment {
             nullable = false,
             unique = true,
             foreignKey = @ForeignKey(
-                    name = "fk_payment_order"
+                    name = "fk_order_return_order"
             )
     )
     private CustomerOrder order;
 
     @Column(
-            name = "payment_reference",
+            name = "return_reason",
             nullable = false,
-            length = 60
+            length = 500
     )
-    private String paymentReference;
+    private String reason;
 
     @Column(
-            name = "refund_reference",
-            length = 60
-    )
-    private String refundReference;
-
-    @Enumerated(EnumType.STRING)
-    @Column(
-            name = "payment_method",
-            nullable = false,
-            length = 30
-    )
-    private PaymentMethod method;
-
-    @Enumerated(EnumType.STRING)
-    @Column(
-            name = "payment_status",
-            nullable = false,
-            length = 30
-    )
-    private PaymentStatus status;
-
-    @Column(
+            name = "refund_amount",
             nullable = false,
             precision = 12,
             scale = 2
     )
-    private BigDecimal amount;
+    private BigDecimal refundAmount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "return_status",
+            nullable = false,
+            length = 30
+    )
+    private ReturnStatus status;
 
     @Column(
             nullable = false,
@@ -91,14 +80,9 @@ public class Payment {
     private LocalDateTime createdAt;
 
     @Column(
-            name = "processed_at"
+            name = "completed_at"
     )
-    private LocalDateTime processedAt;
-
-    @Column(
-            name = "refunded_at"
-    )
-    private LocalDateTime refundedAt;
+    private LocalDateTime completedAt;
 
     @PrePersist
     void prePersist() {

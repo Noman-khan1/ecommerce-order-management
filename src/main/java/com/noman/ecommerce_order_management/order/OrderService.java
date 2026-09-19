@@ -94,12 +94,18 @@ public class OrderService {
                         );
 
         return OrderResponse.builder()
-                .orderId(order.getId())
+                .orderId(
+                        order.getId()
+                )
                 .orderNumber(
                         order.getOrderNumber()
                 )
-                .status(order.getStatus())
-                .subtotal(order.getSubtotal())
+                .status(
+                        order.getStatus()
+                )
+                .subtotal(
+                        order.getSubtotal()
+                )
                 .discountCode(
                         order.getDiscountCode()
                 )
@@ -109,7 +115,9 @@ public class OrderService {
                 .taxableAmount(
                         order.getTaxableAmount()
                 )
-                .taxRate(order.getTaxRate())
+                .taxRate(
+                        order.getTaxRate()
+                )
                 .taxAmount(
                         order.getTaxAmount()
                 )
@@ -119,10 +127,16 @@ public class OrderService {
                 .shippingAddress(
                         order.getShippingAddress()
                 )
-                .createdAt(order.getCreatedAt())
-                .items(items)
+                .createdAt(
+                        order.getCreatedAt()
+                )
+                .items(
+                        items
+                )
                 .payment(
-                        toPaymentResponse(payment)
+                        toPaymentResponse(
+                                payment
+                        )
                 )
                 .build();
     }
@@ -132,11 +146,16 @@ public class OrderService {
     ) {
 
         return OrderItemResponse.builder()
-                .orderItemId(item.getId())
-                .skuId(
-                        item.getSku().getId()
+                .orderItemId(
+                        item.getId()
                 )
-                .skuCode(item.getSkuCode())
+                .skuId(
+                        item.getSku()
+                                .getId()
+                )
+                .skuCode(
+                        item.getSkuCode()
+                )
                 .productId(
                         item.getSku()
                                 .getProduct()
@@ -151,7 +170,9 @@ public class OrderService {
                 .unitPrice(
                         item.getUnitPrice()
                 )
-                .quantity(item.getQuantity())
+                .quantity(
+                        item.getQuantity()
+                )
                 .lineTotal(
                         item.getLineTotal()
                 )
@@ -171,15 +192,29 @@ public class OrderService {
     ) {
 
         return PaymentResponse.builder()
-                .paymentId(payment.getId())
+                .paymentId(
+                        payment.getId()
+                )
                 .paymentReference(
                         payment.getPaymentReference()
                 )
-                .method(payment.getMethod())
-                .status(payment.getStatus())
-                .amount(payment.getAmount())
+                .refundReference(
+                        payment.getRefundReference()
+                )
+                .method(
+                        payment.getMethod()
+                )
+                .status(
+                        payment.getStatus()
+                )
+                .amount(
+                        payment.getAmount()
+                )
                 .processedAt(
                         payment.getProcessedAt()
+                )
+                .refundedAt(
+                        payment.getRefundedAt()
                 )
                 .build();
     }
@@ -190,7 +225,9 @@ public class OrderService {
 
         User customer =
                 userRepository
-                        .findByEmail(customerEmail)
+                        .findByEmail(
+                                customerEmail
+                        )
                         .orElseThrow(() ->
                                 new ResponseStatusException(
                                         HttpStatus.NOT_FOUND,

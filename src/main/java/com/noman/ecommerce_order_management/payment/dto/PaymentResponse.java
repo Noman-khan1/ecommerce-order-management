@@ -16,6 +16,8 @@ public class PaymentResponse {
 
     private String paymentReference;
 
+    private String refundReference;
+
     private PaymentMethod method;
 
     private PaymentStatus status;
@@ -23,4 +25,6 @@ public class PaymentResponse {
     private BigDecimal amount;
 
     private LocalDateTime processedAt;
+
+    private LocalDateTime refundedAt;
 }

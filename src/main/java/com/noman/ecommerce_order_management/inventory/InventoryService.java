@@ -32,9 +32,10 @@ public class InventoryService {
                 request.getAvailableQuantity()
         );
 
-        Sku sku = getSku(
-                request.getSkuId()
-        );
+        Sku sku =
+                getSku(
+                        request.getSkuId()
+                );
 
         if (!sku.isActive()) {
 
@@ -71,16 +72,24 @@ public class InventoryService {
 
         Inventory inventory =
                 Inventory.builder()
-                        .sku(sku)
-                        .warehouse(warehouse)
+                        .sku(
+                                sku
+                        )
+                        .warehouse(
+                                warehouse
+                        )
                         .availableQuantity(
                                 request.getAvailableQuantity()
                         )
-                        .reservedQuantity(0)
+                        .reservedQuantity(
+                                0
+                        )
                         .build();
 
         return toResponse(
-                inventoryRepository.save(inventory)
+                inventoryRepository.save(
+                        inventory
+                )
         );
     }
 
@@ -95,15 +104,26 @@ public class InventoryService {
         );
 
         Inventory inventory =
-                getInventory(inventoryId);
+                getInventory(
+                        inventoryId
+                );
 
         inventory.setAvailableQuantity(
                 request.getAvailableQuantity()
         );
 
-        return toResponse(inventory);
+        return toResponse(
+                inventory
+        );
     }
 
+    /*
+     * Used during checkout.
+     *
+     * InventoryRepository loads rows using
+     * PESSIMISTIC_WRITE so concurrent customers
+     * cannot oversell the same SKU.
+     */
     @Transactional
     public Inventory reserveInventory(
             Long skuId,
@@ -119,10 +139,13 @@ public class InventoryService {
         }
 
         Sku sku =
-                getSku(skuId);
+                getSku(
+                        skuId
+                );
 
         if (!sku.isActive()
-                || !sku.getProduct().isActive()) {
+                || !sku.getProduct()
+                .isActive()) {
 
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -171,6 +194,23 @@ public class InventoryService {
         return inventory;
     }
 
+    /*
+     * Used when an order changes:
+     *
+     * PACKED → SHIPPED
+     *
+     * During checkout:
+     *
+     * available -= quantity
+     * reserved  += quantity
+     *
+     * During shipping:
+     *
+     * reserved -= quantity
+     *
+     * Available stock does NOT increase because
+     * the item has physically left the warehouse.
+     */
     @Transactional
     public void consumeReservedInventory(
             Long skuId,
@@ -214,6 +254,50 @@ public class InventoryService {
         );
     }
 
+    /*
+     * Used during customer return.
+     *
+     * The order has already been shipped and delivered,
+     * therefore its quantity is no longer in reserved stock.
+     *
+     * For this assignment returned goods are assumed to
+     * be sellable immediately, so we add them back to
+     * available inventory in the ORIGINAL warehouse.
+     */
+    @Transactional
+    public void restockReturnedInventory(
+            Long skuId,
+            Long warehouseId,
+            int quantity
+    ) {
+
+        if (quantity <= 0) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Return quantity must be greater than zero"
+            );
+        }
+
+        Inventory inventory =
+                inventoryRepository
+                        .findBySkuAndWarehouseForUpdate(
+                                skuId,
+                                warehouseId
+                        )
+                        .orElseThrow(() ->
+                                new ResponseStatusException(
+                                        HttpStatus.NOT_FOUND,
+                                        "Inventory not found for returned order item"
+                                )
+                        );
+
+        inventory.setAvailableQuantity(
+                inventory.getAvailableQuantity()
+                        + quantity
+        );
+    }
+
     @Transactional(readOnly = true)
     public List<InventoryResponse> getInventories(
             Long skuId,
@@ -221,11 +305,17 @@ public class InventoryService {
     ) {
 
         if (skuId != null) {
-            getSku(skuId);
+
+            getSku(
+                    skuId
+            );
         }
 
         if (warehouseId != null) {
-            getWarehouse(warehouseId);
+
+            getWarehouse(
+                    warehouseId
+            );
         }
 
         List<Inventory> inventories;
@@ -267,7 +357,9 @@ public class InventoryService {
 
         return inventories
                 .stream()
-                .map(this::toResponse)
+                .map(
+                        this::toResponse
+                )
                 .toList();
     }
 
@@ -276,7 +368,9 @@ public class InventoryService {
     ) {
 
         return inventoryRepository
-                .findById(inventoryId)
+                .findById(
+                        inventoryId
+                )
                 .orElseThrow(() ->
                         new ResponseStatusException(
                                 HttpStatus.NOT_FOUND,
@@ -290,7 +384,9 @@ public class InventoryService {
     ) {
 
         return skuRepository
-                .findById(skuId)
+                .findById(
+                        skuId
+                )
                 .orElseThrow(() ->
                         new ResponseStatusException(
                                 HttpStatus.NOT_FOUND,
@@ -304,7 +400,9 @@ public class InventoryService {
     ) {
 
         return warehouseRepository
-                .findById(warehouseId)
+                .findById(
+                        warehouseId
+                )
                 .orElseThrow(() ->
                         new ResponseStatusException(
                                 HttpStatus.NOT_FOUND,
@@ -336,9 +434,12 @@ public class InventoryService {
                         + inventory.getReservedQuantity();
 
         return InventoryResponse.builder()
-                .id(inventory.getId())
+                .id(
+                        inventory.getId()
+                )
                 .skuId(
-                        inventory.getSku().getId()
+                        inventory.getSku()
+                                .getId()
                 )
                 .skuCode(
                         inventory.getSku()
