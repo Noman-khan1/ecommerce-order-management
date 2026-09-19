@@ -9,7 +9,9 @@ import com.noman.ecommerce_order_management.order.OrderItemRepository;
 import com.noman.ecommerce_order_management.order.OrderService;
 import com.noman.ecommerce_order_management.order.OrderStatus;
 import com.noman.ecommerce_order_management.order.dto.OrderResponse;
+import com.noman.ecommerce_order_management.order.event.OrderStatusChangedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,20 +24,32 @@ import java.util.List;
 @RequiredArgsConstructor
 public class FulfillmentService {
 
-    private static final List<OrderStatus> ACTIVE_FULFILLMENT_STATUSES =
+    private static final List<OrderStatus>
+            ACTIVE_FULFILLMENT_STATUSES =
             List.of(
                     OrderStatus.CONFIRMED,
                     OrderStatus.PACKED,
                     OrderStatus.SHIPPED
             );
 
-    private final CustomerOrderRepository customerOrderRepository;
-    private final OrderItemRepository orderItemRepository;
-    private final InventoryService inventoryService;
-    private final OrderService orderService;
+    private final CustomerOrderRepository
+            customerOrderRepository;
+
+    private final OrderItemRepository
+            orderItemRepository;
+
+    private final InventoryService
+            inventoryService;
+
+    private final OrderService
+            orderService;
+
+    private final ApplicationEventPublisher
+            eventPublisher;
 
     @Transactional(readOnly = true)
-    public List<OrderResponse> getOrdersForFulfillment() {
+    public List<OrderResponse>
+    getOrdersForFulfillment() {
 
         return customerOrderRepository
                 .findByStatusInOrderByCreatedAtAsc(
@@ -63,7 +77,9 @@ public class FulfillmentService {
 
         CustomerOrder order =
                 customerOrderRepository
-                        .findByIdForUpdate(orderId)
+                        .findByIdForUpdate(
+                                orderId
+                        )
                         .orElseThrow(() ->
                                 new ResponseStatusException(
                                         HttpStatus.NOT_FOUND,
@@ -79,17 +95,37 @@ public class FulfillmentService {
                 nextStatus
         );
 
-        if (nextStatus == OrderStatus.SHIPPED) {
+        if (nextStatus
+                == OrderStatus.SHIPPED) {
 
-            consumeReservedInventory(order);
+            consumeReservedInventory(
+                    order
+            );
         }
 
-        order.setStatus(nextStatus);
+        order.setStatus(
+                nextStatus
+        );
 
         customerOrderRepository
                 .saveAndFlush(order);
 
-        return orderService.toResponse(order);
+        /*
+         * Like checkout, listeners execute only
+         * after this fulfillment transaction commits.
+         */
+        eventPublisher.publishEvent(
+                new OrderStatusChangedEvent(
+                        order.getId(),
+                        order.getOrderNumber(),
+                        order.getCustomer()
+                                .getEmail(),
+                        nextStatus
+                )
+        );
+
+        return orderService
+                .toResponse(order);
     }
 
     private void consumeReservedInventory(
@@ -125,12 +161,15 @@ public class FulfillmentService {
             );
         }
 
-        for (OrderItem item : orderItems) {
+        for (OrderItem item
+                : orderItems) {
 
             inventoryService
                     .consumeReservedInventory(
-                            item.getSku().getId(),
-                            item.getWarehouse().getId(),
+                            item.getSku()
+                                    .getId(),
+                            item.getWarehouse()
+                                    .getId(),
                             item.getQuantity()
                     );
         }
@@ -142,14 +181,20 @@ public class FulfillmentService {
     ) {
 
         boolean validTransition =
-                (currentStatus == OrderStatus.CONFIRMED
-                        && nextStatus == OrderStatus.PACKED)
+                (currentStatus
+                        == OrderStatus.CONFIRMED
+                        && nextStatus
+                        == OrderStatus.PACKED)
                         ||
-                        (currentStatus == OrderStatus.PACKED
-                                && nextStatus == OrderStatus.SHIPPED)
+                        (currentStatus
+                                == OrderStatus.PACKED
+                                && nextStatus
+                                == OrderStatus.SHIPPED)
                         ||
-                        (currentStatus == OrderStatus.SHIPPED
-                                && nextStatus == OrderStatus.DELIVERED);
+                        (currentStatus
+                                == OrderStatus.SHIPPED
+                                && nextStatus
+                                == OrderStatus.DELIVERED);
 
         if (!validTransition) {
 

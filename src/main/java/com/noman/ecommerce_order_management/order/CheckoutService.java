@@ -9,6 +9,7 @@ import com.noman.ecommerce_order_management.inventory.Inventory;
 import com.noman.ecommerce_order_management.inventory.InventoryService;
 import com.noman.ecommerce_order_management.order.dto.CheckoutRequest;
 import com.noman.ecommerce_order_management.order.dto.OrderResponse;
+import com.noman.ecommerce_order_management.order.event.OrderStatusChangedEvent;
 import com.noman.ecommerce_order_management.payment.Payment;
 import com.noman.ecommerce_order_management.payment.PaymentService;
 import com.noman.ecommerce_order_management.payment.PaymentStatus;
@@ -18,6 +19,7 @@ import com.noman.ecommerce_order_management.user.Role;
 import com.noman.ecommerce_order_management.user.User;
 import com.noman.ecommerce_order_management.user.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +48,9 @@ public class CheckoutService {
     private final PaymentService paymentService;
     private final OrderService orderService;
 
+    private final ApplicationEventPublisher
+            eventPublisher;
+
     @Transactional
     public OrderResponse checkout(
             String customerEmail,
@@ -57,12 +62,6 @@ public class CheckoutService {
         User customer =
                 getCustomer(customerEmail);
 
-        /*
-         * Lock the customer's cart.
-         *
-         * This protects against two simultaneous
-         * checkout requests for the same customer.
-         */
         Cart cart =
                 cartRepository
                         .findAllByCustomerId(
@@ -94,11 +93,10 @@ public class CheckoutService {
         validateCartItems(cartItems);
 
         PricingResponse pricing =
-                pricingService
-                        .previewPricing(
-                                customerEmail,
-                                request.getDiscountCode()
-                        );
+                pricingService.previewPricing(
+                        customerEmail,
+                        request.getDiscountCode()
+                );
 
         CustomerOrder order =
                 CustomerOrder.builder()
@@ -142,21 +140,8 @@ public class CheckoutService {
                         .saveAndFlush(order);
 
         /*
-         * CRITICAL DEADLOCK REDUCTION:
-         *
-         * Every checkout acquires inventory locks
-         * in the same SKU-ID order.
-         *
-         * Without deterministic ordering:
-         *
-         * Transaction A: locks SKU 1 → waits SKU 2
-         * Transaction B: locks SKU 2 → waits SKU 1
-         *
-         * That can deadlock.
-         *
-         * With sorting:
-         *
-         * both acquire SKU 1 → SKU 2
+         * Consistent SKU lock ordering reduces
+         * multi-item checkout deadlock risk.
          */
         List<CartItem> reservationItems =
                 cartItems
@@ -190,11 +175,10 @@ public class CheckoutService {
                     money(
                             sku.getPrice()
                                     .multiply(
-                                            BigDecimal
-                                                    .valueOf(
-                                                            cartItem
-                                                                    .getQuantity()
-                                                    )
+                                            BigDecimal.valueOf(
+                                                    cartItem
+                                                            .getQuantity()
+                                            )
                                     )
                     );
 
@@ -220,8 +204,7 @@ public class CheckoutService {
                                     sku.getPrice()
                             )
                             .quantity(
-                                    cartItem
-                                            .getQuantity()
+                                    cartItem.getQuantity()
                             )
                             .lineTotal(
                                     lineTotal
@@ -258,22 +241,28 @@ public class CheckoutService {
         customerOrderRepository
                 .saveAndFlush(order);
 
-        /*
-         * Clear the cart only after:
-         *
-         * order creation
-         * inventory reservation
-         * order item creation
-         * payment success
-         *
-         * have all completed.
-         */
         cartItemRepository
                 .deleteByCartId(
                         cart.getId()
                 );
 
         cartItemRepository.flush();
+
+        /*
+         * Event is published inside the transaction,
+         * but the listeners use AFTER_COMMIT.
+         *
+         * Therefore downstream processing runs only
+         * if checkout successfully commits.
+         */
+        eventPublisher.publishEvent(
+                new OrderStatusChangedEvent(
+                        order.getId(),
+                        order.getOrderNumber(),
+                        customer.getEmail(),
+                        OrderStatus.CONFIRMED
+                )
+        );
 
         return orderService
                 .toResponse(order);
@@ -283,8 +272,7 @@ public class CheckoutService {
             List<CartItem> cartItems
     ) {
 
-        for (CartItem item
-                : cartItems) {
+        for (CartItem item : cartItems) {
 
             Sku sku =
                     item.getSku();
